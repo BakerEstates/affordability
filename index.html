@@ -1,0 +1,210 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baker Estates Custom Affordability Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 font-sans">
+    <div class="container mx-auto p-6 max-w-3xl">
+        <h1 class="text-4xl font-bold text-center text-gray-900 mb-4">Baker Estates Custom Affordability Calculator</h1>
+        <img src="baker-estates-logo.png" alt="Baker Estates Logo" class="mx-auto h-16 mb-8">
+        
+        <div class="bg-white p-8 rounded-xl shadow-lg">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">What’s your total household income for the year?</label>
+                    <input type="text" id="income" class="mt-1 p-3 w-full border rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="100,000" oninput="formatNumber(this)">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Whats your total debt payments each month? (eg. Cars/Credit Cards)</label>
+                    <input type="text" id="debts" class="mt-1 p-3 w-full border rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="500" oninput="formatNumber(this)">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">How much do you have for a downpayment?</label>
+                    <input type="text" id="downPayment" class="mt-1 p-3 w-full border rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="20,000" oninput="formatNumber(this)">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">What interest rate would you get?</label>
+                    <input type="number" id="interestRate" class="mt-1 p-3 w-full border rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="7" step="0.1" min="0">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">How many years will your mortgage last?</label>
+                    <input type="number" id="loanTerm" class="mt-1 p-3 w-full border rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="30" min="1">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Guestimate for property taxes? (Call me if unsure)</label>
+                    <input type="text" id="taxes" class="mt-1 p-3 w-full border rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="0" oninput="formatNumber(this)">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Guestimate for home insurance? (Call me if unsure)</label>
+                    <input type="text" id="insurance" class="mt-1 p-3 w-full border rounded-lg focus:ring-blue-500 focus:border-blue-500" placeholder="0" oninput="formatNumber(this)">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Pick a budgeting rule</label>
+                    <select id="mortgageRule" class="mt-1 p-3 w-full border rounded-lg focus:ring-blue-500 focus:border-blue-500" onchange="updateRuleExplanation()">
+                        <option value="28_36">28/36 Rule</option>
+                        <option value="43_43" selected>43/43 Rule</option>
+                        <option value="35_45">35/45 Rule</option>
+                        <option value="25_post_tax">25% Post-Tax Rule</option>
+                    </select>
+                </div>
+            </div>
+            <div id="ruleExplanation" class="mt-6 p-4 bg-gray-100 rounded-lg text-gray-700">
+                <p>The 43/43 Rule allows your housing costs (mortgage, taxes, insurance) to be up to 43% of your gross monthly income, and your total debt (housing + other debts) to also be up to 43%. This is a more lenient rule, often used by most banks, but may stretch your budget if other expenses are high.</p>
+            </div>
+            <button onclick="calculateAffordability()" class="mt-8 w-full bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700 transition">Calculate</button>
+        </div>
+
+        <div id="results" class="mt-8 bg-white p-8 rounded-xl shadow-lg hidden">
+            <h1 class="text-2xl font-semibold text-gray-900">Your Results</h1>
+            <p id="maxHomePrice" class="text-lg text-gray-700 mt-4"></p>
+            <p id="monthlyPayment" class="text-lg text-gray-700 mt-2"></p>
+            <p id="error" class="text-red-600 mt-4 hidden"></p>
+        </div>
+    </div>
+
+    <footer class="text-center mt-12">
+    </footer>
+
+    <script>
+        function formatNumber(input) {
+            let value = input.value.replace(/[^0-9]/g, ''); // Remove non-digits
+            if (value) {
+                input.value = parseFloat(value).toLocaleString('en-US'); // Add commas
+            } else {
+                input.value = ''; // Clear if no valid number
+            }
+        }
+
+        function parseFormattedNumber(value) {
+            return parseFloat(value.replace(/[^0-9]/g, '')) || 0;
+        }
+
+        function updateRuleExplanation() {
+            const rule = document.getElementById('mortgageRule').value;
+            const explanation = document.getElementById('ruleExplanation');
+            if (rule === '28_36') {
+                explanation.innerHTML = '<p>The 28/36 Rule limits your housing costs (mortgage, taxes, insurance) to 28% of your gross monthly income, and your total debt (housing + other debts) to 36%. This is a conservative rule to ensure you have room in your budget for other expenses.</p>';
+            } else if (rule === '43_43') {
+                explanation.innerHTML = '<p>The 43/43 Rule allows your housing costs (mortgage, taxes, insurance) to be up to 43% of your gross monthly income, and your total debt (housing + other debts) to also be up to 43%. This is a more lenient rule, often used by most banks, but may stretch your budget if other expenses are high.</p>';
+            } else if (rule === '35_45') {
+                explanation.innerHTML = '<p>The 35/45 Rule limits your total debt (housing + other debts) to 35% of your pre-tax income or 45% of your after-tax income (we assume a 20% tax rate for this calculation). Your affordable range falls between these two figures, offering a balanced approach.</p>';
+            } else if (rule === '25_post_tax') {
+                explanation.innerHTML = '<p>The 25% Post-Tax Rule limits your total debt (housing + other debts) to 25% of your post-tax income (we assume a 20% tax rate for this calculation). This is a conservative rule, prioritizing financial flexibility for other expenses.</p>';
+            }
+        }
+
+        function calculateAffordability() {
+            const income = parseFormattedNumber(document.getElementById('income').value);
+            const debts = parseFormattedNumber(document.getElementById('debts').value);
+            const downPayment = parseFormattedNumber(document.getElementById('downPayment').value);
+            const interestRate = parseFloat(document.getElementById('interestRate').value) / 100 || 0;
+            const loanTerm = parseFloat(document.getElementById('loanTerm').value) || 0;
+            const taxes = parseFormattedNumber(document.getElementById('taxes').value) / 12;
+            const insurance = parseFormattedNumber(document.getElementById('insurance').value) / 12;
+            const rule = document.getElementById('mortgageRule').value;
+
+            const results = document.getElementById('results');
+            const error = document.getElementById('error');
+            const maxHomePrice = document.getElementById('maxHomePrice');
+            const monthlyPayment = document.getElementById('monthlyPayment');
+
+            results.classList.add('hidden');
+            error.classList.add('hidden');
+
+            if (income <= 0 || loanTerm <= 0) {
+                error.textContent = 'Please enter a valid income and loan term.';
+                error.classList.remove('hidden');
+                return;
+            }
+
+            if (interestRate <= 0) {
+                error.textContent = 'Please enter a valid interest rate.';
+                error.classList.remove('hidden');
+                return;
+            }
+
+            const monthlyIncome = income / 12;
+            let maxHousing, maxTotalDebt;
+
+            if (rule === '28_36') {
+                maxHousing = monthlyIncome * 0.28;
+                maxTotalDebt = monthlyIncome * 0.36;
+            } else if (rule === '43_43') {
+                maxHousing = monthlyIncome * 0.43;
+                maxTotalDebt = monthlyIncome * 0.43;
+            } else if (rule === '35_45') {
+                const postTaxIncome = monthlyIncome * 0.8; // Assuming 20% tax rate
+                maxHousing = monthlyIncome * 0.35; // Pre-tax
+                maxTotalDebt = Math.min(monthlyIncome * 0.35, postTaxIncome * 0.45); // Between pre-tax 35% and post-tax 45%
+            } else if (rule === '25_post_tax') {
+                const postTaxIncome = monthlyIncome * 0.8; // Assuming 20% tax rate
+                maxHousing = postTaxIncome * 0.25;
+                maxTotalDebt = postTaxIncome * 0.25;
+            }
+
+            const maxMortgagePayment = Math.min(maxHousing, maxTotalDebt - debts) - taxes - insurance;
+
+            if (maxMortgagePayment <= 0) {
+                error.textContent = 'Your debts are too high to afford a mortgage with these inputs.';
+                error.classList.remove('hidden');
+                return;
+            }
+
+            const monthlyRate = interestRate / 12;
+            const nPayments = loanTerm * 12;
+            const loanAmount = maxMortgagePayment * (1 - Math.pow(1 + monthlyRate, -nPayments)) / monthlyRate;
+            const homePrice = loanAmount + downPayment;
+
+            maxHomePrice.textContent = `Maximum Home Price: $${Math.round(homePrice).toLocaleString()}`;
+            monthlyPayment.textContent = `Estimated Monthly Payment: $${Math.round(maxMortgagePayment + taxes + insurance).toLocaleString()} (includes taxes and insurance)`;
+
+            results.classList.remove('hidden');
+        }
+
+        // Initialize explanation on page load
+        updateRuleExplanation();
+    </script>
+</body>
+</html>
